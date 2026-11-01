@@ -6,7 +6,7 @@ App web de uso pessoal que conecta ao headband **Muse 2** por Web Bluetooth
 ## O que faz
 
 - Conecta/desconecta e reconecta sozinho se o sinal cair
-- EEG dos 4 canais (TP9, AF7, AF8, TP10) a 256 Hz, PPG (64 Hz), acelerômetro e giroscópio (52 Hz) e bateria
+- EEG dos 4 canais (TP9, AF7, AF8, TP10) a 256 Hz, PPG infravermelho (64 Hz), acelerômetro (52 Hz) e bateria
 - Gráfico em tempo real do sinal bruto (escala e janela ajustáveis; filtro 1–40 Hz opcional) e indicador de qualidade por canal (ruído de banda larga em 55–100 Hz, que denuncia eletrodo mal encostado)
 - As barras de bandas só usam canais com bom contato; a tabela mostra dB de µV²/Hz (mesma escala do app oficial da Muse) e deixa os canais excluídos esmaecidos
 - Gráfico das bandas ao longo do tempo (dB de µV²/Hz, um ponto a cada 4 s, janela de 1, 5 ou 10 min), com botões para ver todas ou uma só, como o app oficial
@@ -14,7 +14,7 @@ App web de uso pessoal que conecta ao headband **Muse 2** por Web Bluetooth
 - Frequência cardíaca estimada pelo espectro do PPG (janela de 10 s; só mostra o valor com sinal bom)
 - Gravação de sessão e exportação em CSV
 
-O protocolo foi implementado do zero com base no muse-js (sem dependências, sem build).
+O protocolo foi implementado do zero com base no muse-js (sem dependências, sem build). A partida da transmissão segue o que o app oficial faz, observado numa captura Bluetooth do próprio aparelho (firmware 1.0.22): `v7`, `s`, `h`, preset `p51` (ou `p21` sem PPG), `s`, assinaturas e `dc001`, com `d` como plano B se o EEG não chegar em 3 s. Como o app oficial, não assina o giroscópio nem os PPG ambiente e vermelho.
 
 ## Como usar
 
@@ -30,8 +30,8 @@ Um arquivo por tipo, tempo em segundos desde o início da gravação. Pacotes pe
 | Arquivo | Colunas |
 |---|---|
 | `eeg` | `time_s, TP9, AF7, AF8, TP10` (µV) |
-| `ppg` | `time_s, ambient, infrared, red` (contagens brutas) |
-| `movimento` | `time_s, acc_x_g, acc_y_g, acc_z_g, gyro_x_dps, gyro_y_dps, gyro_z_dps` |
+| `ppg` | `time_s, ambient, infrared, red` (contagens brutas; só `infrared` é preenchido) |
+| `movimento` | `time_s, acc_x_g, acc_y_g, acc_z_g, gyro_x_dps, gyro_y_dps, gyro_z_dps` (giroscópio vazio) |
 | `bandas` | `time_s`, potência (µV²) de cada banda por canal (`TP9_delta_uv2`, …) e `hr_bpm` |
 
 ## Rodar e publicar

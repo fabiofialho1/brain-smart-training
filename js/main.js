@@ -376,9 +376,7 @@ function updateHeartRate() {
     return;
   }
   const n = Math.min(ppgRaw[1].count, PPG_RATE * 10);
-  const candidates = [1, 2]
-    .map((ch) => estimateHeartRate(ppgRaw[ch].toArray(n), PPG_RATE))
-    .filter(Boolean);
+  const candidates = [estimateHeartRate(ppgRaw[1].toArray(n), PPG_RATE)].filter(Boolean);
   const best = candidates.sort((a, b) => b.snr - a.snr)[0];
 
   if (best && best.snr >= HR_MIN_SNR) {

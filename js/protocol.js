@@ -13,6 +13,7 @@ export const CHAR = {
   telemetry: uuid('000b'),
   eeg: [uuid('0003'), uuid('0004'), uuid('0005'), uuid('0006')], // TP9, AF7, AF8, TP10
   ppg: [uuid('000f'), uuid('0010'), uuid('0011')], // ambient, infrared, red
+  slow: uuid('0008'), // unknown low-rate stream; the official app subscribes to it
 };
 
 export const EEG_CHANNELS = ['TP9', 'AF7', 'AF8', 'TP10'];
@@ -31,12 +32,16 @@ const ACCEL_SCALE_G = 0.0000610352; // g per LSB
 const GYRO_SCALE_DPS = 0.0074768; // °/s per LSB
 
 // Control commands. `p21` = 4 EEG channels, `p50` = 4 EEG channels + PPG.
+// Sequence taken from a Bluetooth capture of the official app (Muse 2, firmware 1.0.22):
+// v7, s, h, <preset>, s, subscribe, dc001. `d` is the older start command, kept as a fallback.
 export const COMMANDS = {
+  version: 'v7',
   halt: 'h',
+  start: 'dc001',
   resume: 'd',
   status: 's',
   presetEeg: 'p21',
-  presetEegPpg: 'p50',
+  presetEegPpg: 'p51', // the official app uses p51 (p50 was our guess from muse-js)
 };
 
 // Commands are sent as [length, ...ascii, '\n'] where length counts the text plus '\n'.

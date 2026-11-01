@@ -3,13 +3,12 @@
 //   'eeg'       detail = { channel, index, samples }     (µV, 12 per packet)
 //   'ppg'       detail = { channel, index, samples }     (raw counts, 6 per packet)
 //   'accel'     detail = { index, samples }              (g, 3 x [x, y, z])
-//   'gyro'      detail = { index, samples }              (°/s)
 //   'telemetry' detail = { battery, voltage, temperature }
 //   'reconnected'  after an automatic reconnection (packet counters restart)
 
 import {
   MUSE_SERVICE, CHAR, COMMANDS, encodeCommand,
-  decodeEeg, decodePpg, decodeAccel, decodeGyro, decodeTelemetry,
+  decodeEeg, decodePpg, decodeAccel, decodeTelemetry,
 } from './protocol.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -38,6 +37,8 @@ export class MuseClient extends EventTarget {
     this.manualDisconnect = false;
     this.hasPpg = false;
     this.usePpg = true; // false: preset p21 (EEG only), PPG LEDs stay off
+    this._openId = 0;
+    this._eegSeen = false;
     this._onGattDisconnected = () => this._handleDisconnect();
   }
 
@@ -98,47 +99,66 @@ export class MuseClient extends EventTarget {
   async _open() {
     this.server = await withRetry(() => this.device.gatt.connect());
     const service = await withRetry(() => this.server.getPrimaryService(MUSE_SERVICE));
+    const openId = ++this._openId;
+    this._eegSeen = false;
 
     this.control = await service.getCharacteristic(CHAR.control);
     await withRetry(() => this.control.startNotifications()); // command replies; ignored
 
-    await this._subscribe(service, CHAR.telemetry, (dv) => {
-      const t = decodeTelemetry(dv);
-      if (t) this._emit('telemetry', t);
-    });
+    // PPG exists only on the Muse 2 / Muse S; the preset depends on it.
+    this.hasPpg = false;
+    if (this.usePpg) {
+      try {
+        await service.getCharacteristic(CHAR.ppg[1]);
+        this.hasPpg = true;
+      } catch { /* no PPG on this headband */ }
+    }
+
+    // Same order as the official app: query, halt, preset, status, subscribe, start.
+    for (const cmd of [COMMANDS.version, COMMANDS.status, COMMANDS.halt,
+      this.hasPpg ? COMMANDS.presetEegPpg : COMMANDS.presetEeg, COMMANDS.status]) {
+      await this._send(cmd);
+      await sleep(80);
+    }
+
+    for (let ch = 0; ch < CHAR.eeg.length; ch++) {
+      await this._subscribe(service, CHAR.eeg[ch], (dv) => {
+        const p = decodeEeg(dv);
+        if (!p) return;
+        this._eegSeen = true;
+        this._emit('eeg', { channel: ch, ...p });
+      });
+    }
     await this._subscribe(service, CHAR.accel, (dv) => {
       const p = decodeAccel(dv);
       if (p) this._emit('accel', p);
     });
-    await this._subscribe(service, CHAR.gyro, (dv) => {
-      const p = decodeGyro(dv);
-      if (p) this._emit('gyro', p);
+    await this._subscribe(service, CHAR.telemetry, (dv) => {
+      const t = decodeTelemetry(dv);
+      if (t) this._emit('telemetry', t);
     });
-    for (let ch = 0; ch < CHAR.eeg.length; ch++) {
-      await this._subscribe(service, CHAR.eeg[ch], (dv) => {
-        const p = decodeEeg(dv);
-        if (p) this._emit('eeg', { channel: ch, ...p });
+    // Only the infrared PPG channel (the official app skips ambient and red) and the unknown
+    // slow stream it also subscribes to. The gyroscope is not subscribed, like the official app.
+    if (this.hasPpg) {
+      await this._subscribe(service, CHAR.ppg[1], (dv) => {
+        const p = decodePpg(dv);
+        if (p) this._emit('ppg', { channel: 1, ...p });
       });
     }
-    // PPG exists only on the Muse 2 / Muse S; tolerate its absence.
-    this.hasPpg = this.usePpg;
-    for (let ch = 0; this.usePpg && ch < CHAR.ppg.length; ch++) {
-      try {
-        await this._subscribe(service, CHAR.ppg[ch], (dv) => {
-          const p = decodePpg(dv);
-          if (p) this._emit('ppg', { channel: ch, ...p });
-        });
-      } catch {
-        this.hasPpg = false;
-      }
-    }
+    try {
+      await this._subscribe(service, CHAR.slow, () => {});
+    } catch { /* optional */ }
 
-    // Start streaming: halt, choose preset, request status, resume.
-    await this._send(COMMANDS.halt);
-    await this._send(this.hasPpg ? COMMANDS.presetEegPpg : COMMANDS.presetEeg);
-    await this._send(COMMANDS.status);
-    await this._send(COMMANDS.resume);
+    await this._send(COMMANDS.start);
     this._setState('connected');
+
+    // If this firmware ignores `dc001`, fall back to the older `d` start command.
+    setTimeout(async () => {
+      if (this._openId !== openId || this._eegSeen || !this.control || !this.server?.connected) return;
+      try {
+        await this._send(COMMANDS.resume);
+      } catch { /* link dropped meanwhile */ }
+    }, 3000);
   }
 
   async _subscribe(service, uuid, handler) {
