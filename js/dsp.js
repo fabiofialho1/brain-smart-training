@@ -159,6 +159,40 @@ export function groupBandDb(powersList, bands = BANDS) {
   });
 }
 
+// Averages the 2 s window estimates over a longer interval (Welch-style: the windows overlap),
+// which cuts the variance of a single periodogram. Only windows where the channel had good
+// contact count; if a channel never did, it is left out; if none did, all windows are used.
+export class BandAccumulator {
+  constructor(channels, bands = BANDS) {
+    this.bands = bands;
+    this.reset(channels);
+  }
+
+  reset(channels = this.good.length) {
+    const empty = () => ({ sum: this.bands.map(() => 0), n: 0 });
+    this.good = Array.from({ length: channels }, empty);
+    this.all = Array.from({ length: channels }, empty);
+  }
+
+  add(channel, powers, state) {
+    const targets = state === 'good' ? [this.good[channel], this.all[channel]] : [this.all[channel]];
+    for (const t of targets) {
+      powers.forEach((p, i) => { t.sum[i] += p; });
+      t.n++;
+    }
+  }
+
+  // dB of density (µV²/Hz) per band, or null if nothing was added. Clears the accumulator.
+  flush() {
+    const means = (list) => list.filter((t) => t.n > 0).map((t) => t.sum.map((v) => v / t.n));
+    let chosen = means(this.good);
+    if (chosen.length === 0) chosen = means(this.all);
+    const out = chosen.length > 0 ? groupBandDb(chosen, this.bands) : null;
+    this.reset();
+    return out;
+  }
+}
+
 // --- Filters (RBJ cookbook biquads, transposed direct form II) ---
 
 export class Biquad {

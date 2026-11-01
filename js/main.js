@@ -3,7 +3,7 @@
 import { MuseClient } from './muse.js';
 import { EEG_CHANNELS, PPG_CHANNELS, EEG_RATE, PPG_RATE, MOTION_RATE } from './protocol.js';
 import {
-  RingBuffer, Biquad, FilterChain, BANDS, analyzeWindow, bandDensityDb, groupBandDb, estimateHeartRate, HR_MIN_SNR,
+  RingBuffer, Biquad, FilterChain, BANDS, analyzeWindow, bandDensityDb, BandAccumulator, estimateHeartRate, HR_MIN_SNR,
 } from './dsp.js';
 import { Recorder } from './recorder.js';
 import { drawLanes, drawBandChart } from './chart.js';
@@ -45,6 +45,9 @@ const channelState = EEG_CHANNELS.map(() => 'flat');
 const bandHistory = []; // { t, db: number[] | null }, one point per second; null marks a gap
 const visibleBands = new Set(BANDS.map((_, i) => i));
 const HISTORY_MAX_MS = 10 * 60 * 1000;
+const CHART_INTERVAL_MS = 4000; // one chart point per 4 s, like the Muse app
+const chartAcc = new BandAccumulator(EEG_CHANNELS.length);
+let lastChartPoint = 0;
 let lastEegAt = 0;
 let lastPpgAt = 0;
 let currentHr = null;
@@ -255,6 +258,7 @@ function updateBands() {
     const prev = smoothedPowers[ch];
     smoothedPowers[ch] = prev ? powers.map((v, i) => prev[i] * 0.6 + v * 0.4) : powers;
     channelState[ch] = quality.state;
+    chartAcc.add(ch, powers, quality.state);
     updated.push(ch);
 
     const chip = $(`q-${ch}`);
@@ -288,11 +292,16 @@ function updateBands() {
   });
 
   const now = performance.now();
-  const last = bandHistory[bandHistory.length - 1];
-  if (!last || now - last.t >= 1000) {
-    if (last?.db && now - last.t > 3000) bandHistory.push({ t: last.t + 1, db: null });
-    bandHistory.push({ t: now, db: groupBandDb(used.map((ch) => smoothedPowers[ch])) });
-    while (bandHistory[0].t < now - HISTORY_MAX_MS) bandHistory.shift();
+  if (lastChartPoint === 0) lastChartPoint = now;
+  if (now - lastChartPoint >= CHART_INTERVAL_MS) {
+    const db = chartAcc.flush();
+    const last = bandHistory[bandHistory.length - 1];
+    if (db) {
+      if (last?.db && now - last.t > 2.5 * CHART_INTERVAL_MS) bandHistory.push({ t: last.t + 1, db: null });
+      bandHistory.push({ t: now, db });
+      while (bandHistory[0].t < now - HISTORY_MAX_MS) bandHistory.shift();
+    }
+    lastChartPoint = now;
   }
 
   if (recording && updated.length === EEG_CHANNELS.length) {
