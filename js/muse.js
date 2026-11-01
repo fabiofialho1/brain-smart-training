@@ -37,6 +37,7 @@ export class MuseClient extends EventTarget {
     this.state = 'disconnected';
     this.manualDisconnect = false;
     this.hasPpg = false;
+    this.usePpg = true; // false: preset p21 (EEG only), PPG LEDs stay off
     this._onGattDisconnected = () => this._handleDisconnect();
   }
 
@@ -120,8 +121,8 @@ export class MuseClient extends EventTarget {
       });
     }
     // PPG exists only on the Muse 2 / Muse S; tolerate its absence.
-    this.hasPpg = true;
-    for (let ch = 0; ch < CHAR.ppg.length; ch++) {
+    this.hasPpg = this.usePpg;
+    for (let ch = 0; this.usePpg && ch < CHAR.ppg.length; ch++) {
       try {
         await this._subscribe(service, CHAR.ppg[ch], (dv) => {
           const p = decodePpg(dv);

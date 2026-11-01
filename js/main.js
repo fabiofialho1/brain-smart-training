@@ -79,6 +79,7 @@ function renderState(state) {
   $('connect').hidden = online || state === 'connecting';
   $('disconnect').hidden = !online;
   $('record').disabled = state !== 'connected' && !recording;
+  $('use-ppg').disabled = state !== 'disconnected';
   if (state === 'disconnected') {
     $('battery').hidden = true;
     if (recording) stopRecording();
@@ -146,6 +147,14 @@ $('connect').addEventListener('click', async () => {
 });
 
 $('disconnect').addEventListener('click', () => muse.disconnect());
+
+// PPG on/off: applies on the next connection; remembered between visits.
+try { $('use-ppg').checked = localStorage.getItem('use-ppg') !== '0'; } catch { /* storage blocked */ }
+muse.usePpg = $('use-ppg').checked;
+$('use-ppg').addEventListener('change', () => {
+  muse.usePpg = $('use-ppg').checked;
+  try { localStorage.setItem('use-ppg', muse.usePpg ? '1' : '0'); } catch { /* ignore */ }
+});
 
 // --- Charts ---
 const eegCanvas = $('eeg-chart');
@@ -325,6 +334,12 @@ function updateBands() {
 // --- Heart rate (once per second) ---
 function updateHeartRate() {
   const hint = $('hr-hint');
+  if (muse.state === 'connected' && !muse.hasPpg) {
+    $('hr').textContent = '--';
+    hint.textContent = 'PPG desligado. Marque "Medir frequência cardíaca" e reconecte para medir.';
+    currentHr = null;
+    return;
+  }
   if (performance.now() - lastPpgAt > 3000) {
     $('hr').textContent = '--';
     hint.textContent = lastPpgAt ? 'Sem dados de PPG.' : 'Aguardando dados do PPG…';

@@ -49,6 +49,7 @@ main { max-width: 720px; margin: 0 auto; padding: 12px 16px 32px; display: grid;
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .tools { margin-bottom: 10px; font-size: 13px; color: var(--muted); }
 .tools label { display: flex; align-items: center; gap: 6px; }
+.ppg-toggle { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 13px; }
 .exports { margin-top: 12px; }
 .hint { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; }
 .error { color: var(--bad); margin: 10px 0 0; }
