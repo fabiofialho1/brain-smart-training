@@ -1,0 +1,9 @@
+{
+  "name": "brain-smart-training",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "start": "python3 -m http.server 8000"
+  }
+}
