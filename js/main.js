@@ -31,6 +31,16 @@ const EEG_COLORS = ['#4fb3d9', '#4cc38a', '#e3b341', '#d98cf0'];
 const EEG_SECONDS = 10;
 const eegRaw = EEG_CHANNELS.map(() => new RingBuffer(EEG_RATE * EEG_SECONDS));
 const eegView = EEG_CHANNELS.map(() => new RingBuffer(EEG_RATE * EEG_SECONDS)); // band-passed, for display
+// Analysis signal (bands, quality): raw minus slow drift. Electrode drift is hundreds of µV below
+// 1 Hz and would otherwise leak into delta and inflate the rms; no low-pass here, the quality
+// check needs to see 55-100 Hz.
+const eegAnalysis = EEG_CHANNELS.map(() => new RingBuffer(EEG_RATE * EEG_SECONDS));
+const analysisFilters = EEG_CHANNELS.map(() => new FilterChain([
+  Biquad.highpass(EEG_RATE, 0.5, 0.5412),
+  Biquad.highpass(EEG_RATE, 0.5, 1.3066),
+]));
+const lastEegIndex = EEG_CHANNELS.map(() => null);
+const lostEegPackets = EEG_CHANNELS.map(() => 0);
 // Display filter: 1 Hz high-pass, 4th-order 40 Hz low-pass (two Butterworth sections) and a
 // 50 Hz notch for mains pickup. The analysis (bands, quality) works on the raw signal.
 const eegFilters = EEG_CHANNELS.map(() => new FilterChain([
@@ -92,6 +102,8 @@ muse.addEventListener('state', (e) => renderState(e.detail));
 muse.addEventListener('reconnected', () => {
   recorder?.restart(performance.now());
   for (const f of eegFilters) f.primed = false;
+  for (const f of analysisFilters) f.primed = false;
+  lastEegIndex.fill(null);
   for (const f of ppgFilters) f.primed = false;
 });
 
@@ -108,6 +120,13 @@ muse.addEventListener('eeg', (e) => {
   lastEegAt = performance.now();
   eegRaw[channel].pushMany(samples);
   for (const s of samples) eegView[channel].push(eegFilters[channel].process(s));
+  for (const s of samples) eegAnalysis[channel].push(analysisFilters[channel].process(s));
+  const prevIndex = lastEegIndex[channel];
+  if (prevIndex !== null) {
+    const step = (index - prevIndex) & 0xffff;
+    if (step > 1 && step < 1000) lostEegPackets[channel] += step - 1;
+  }
+  lastEegIndex[channel] = index;
   if (recording) recorder.addEeg(channel, index, samples);
 });
 
@@ -263,7 +282,7 @@ function buildBandsUi() {
     });
     filter.appendChild(btn);
   });
-  $('diag-body').innerHTML = EEG_CHANNELS.map((name, ch) => `<tr id="diag-${ch}"><td>${name}</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>`).join('');
+  $('diag-body').innerHTML = EEG_CHANNELS.map((name, ch) => `<tr id="diag-${ch}"><td>${name}</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>`).join('');
   $('quality').innerHTML = EEG_CHANNELS.map((name, ch) => `<span class="chip" id="q-${ch}">${name}</span>`).join('');
 }
 
@@ -271,8 +290,8 @@ function updateBands() {
   if (performance.now() - lastEegAt > 2000) return; // no live data
   const updated = [];
   EEG_CHANNELS.forEach((_, ch) => {
-    if (eegRaw[ch].count < BAND_WINDOW) return;
-    const { powers, quality } = analyzeWindow(eegRaw[ch].toArray(BAND_WINDOW), EEG_RATE);
+    if (eegAnalysis[ch].count < BAND_WINDOW) return;
+    const { powers, quality } = analyzeWindow(eegAnalysis[ch].toArray(BAND_WINDOW), EEG_RATE);
     const prev = smoothedPowers[ch];
     smoothedPowers[ch] = prev ? powers.map((v, i) => prev[i] * 0.6 + v * 0.4) : powers;
     // The chart looks at every window (an artifact edge must not leak in); the indicator and the
@@ -280,7 +299,7 @@ function updateBands() {
     chartAcc.add(ch, powers, quality.state);
     const stable = qualityTracker.update(ch, quality.state);
     channelState[ch] = stable;
-    $(`diag-${ch}`).innerHTML = `<td>${EEG_CHANNELS[ch]}</td><td>${quality.rms.toFixed(0)}</td><td>${quality.hfDb.toFixed(1)}</td><td>${quality.mainsDb.toFixed(1)}</td><td>${QUALITY_LABEL[quality.state]} / ${QUALITY_LABEL[stable]}</td>`;
+    $(`diag-${ch}`).innerHTML = `<td>${EEG_CHANNELS[ch]}</td><td>${quality.rms.toFixed(0)}</td><td>${quality.hfDb.toFixed(1)}</td><td>${quality.mainsDb.toFixed(1)}</td><td>${QUALITY_LABEL[quality.state]} / ${QUALITY_LABEL[stable]}</td><td>${lostEegPackets[ch]}</td>`;
     updated.push(ch);
 
     const chip = $(`q-${ch}`);
