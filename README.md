@@ -1,4 +1,4 @@
-# Muse 2 EEG (PWA)
+# Brain Smart Training (Muse 2 EEG PWA)
 
 App web de uso pessoal que conecta ao headband **Muse 2** por Web Bluetooth
 (serviço BLE `0xfe8d`) no Chrome do Android.
