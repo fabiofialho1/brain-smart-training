@@ -7,6 +7,8 @@ import {
 } from './dsp.js';
 import { Recorder } from './recorder.js';
 import { drawLanes, drawBandChart } from './chart.js';
+import { NeuroGame } from './game.js';
+import { movementLevel } from './neuro.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -60,6 +62,7 @@ const BAND_WINDOW = EEG_RATE * 2; // ~2 s
 const smoothedPowers = EEG_CHANNELS.map(() => null);
 const channelState = EEG_CHANNELS.map(() => 'flat');
 const qualityTracker = new QualityTracker(EEG_CHANNELS.length);
+const game = new NeuroGame({ root: $('game'), canvas: $('game-canvas') });
 const bandHistory = []; // { t, db: number[] | null }, one point per second; null marks a gap
 const visibleBands = new Set(BANDS.map((_, i) => i));
 const HISTORY_MAX_MS = 10 * 60 * 1000;
@@ -176,6 +179,7 @@ $('connect').addEventListener('click', async () => {
 });
 
 $('disconnect').addEventListener('click', () => muse.disconnect());
+$('open-game').addEventListener('click', () => game.open(muse.state === 'connected'));
 
 // PPG on/off: applies on the next connection; remembered between visits.
 try { $('use-ppg').checked = localStorage.getItem('use-ppg') !== '0'; } catch { /* storage blocked */ }
@@ -300,6 +304,7 @@ function buildBandsUi() {
 function updateBands() {
   if (performance.now() - lastEegAt > 2000) return; // no live data
   const updated = [];
+  const frameChannels = EEG_CHANNELS.map(() => null);
   EEG_CHANNELS.forEach((_, ch) => {
     if (eegAnalysis[ch].count < BAND_WINDOW) return;
     const { powers, quality } = analyzeWindow(eegAnalysis[ch].toArray(BAND_WINDOW), EEG_RATE);
@@ -308,6 +313,7 @@ function updateBands() {
     // The chart looks at every window (an artifact edge must not leak in); the indicator and the
     // bars use the debounced state so they do not flicker around a threshold.
     chartAcc.add(ch, powers, quality.state);
+    frameChannels[ch] = { powers, hfDb: quality.hfDb };
     const stable = qualityTracker.update(ch, quality.state);
     channelState[ch] = stable;
     $(`diag-${ch}`).innerHTML = `<td>${EEG_CHANNELS[ch]}</td><td>${quality.rms.toFixed(0)}</td><td>${quality.hfDb.toFixed(1)}</td><td>${quality.mainsDb.toFixed(1)}</td><td>${QUALITY_LABEL[quality.state]} / ${QUALITY_LABEL[stable]}</td><td>${lostEegPackets[ch]}</td>`;
@@ -318,6 +324,11 @@ function updateBands() {
     chip.textContent = `${EEG_CHANNELS[ch]} ${QUALITY_LABEL[stable]}`;
   });
   if (updated.length === 0) return;
+  if (game.active) {
+    const [ax, ay, az] = accel.map((r) => r.toArray(MOTION_RATE * 2));
+    const magnitudes = Array.from(ax, (v, i) => Math.hypot(v, ay[i], az[i]));
+    game.onFrame({ channels: frameChannels, states: channelState.map((st, ch) => (frameChannels[ch] || eegAnalysis[ch].count >= BAND_WINDOW ? st : null)), movement: magnitudes.length ? movementLevel(magnitudes) : 0 });
+  }
   $('settle-note').hidden = !(performance.now() - connectedAt < 90000 && channelState.some((st) => st === 'noisy'));
 
   // Summary bars only use channels with good contact; a single noisy electrode would otherwise

@@ -14,6 +14,8 @@ band power, PPG heart rate, motion, session recording to CSV. No build step.
 - `js/muse.js` — Web Bluetooth client (auto-reconnect)
 - `js/dsp.js` — FFT, band power, filters, signal quality, heart rate
 - `js/recorder.js` — recorder (samples placed by packet index) and CSV
+- `js/neuro.js` — rocket game logic: channel suggestion, personal baseline (robust z-scores), calm score, adaptive reward threshold, rocket altitude
+- `js/game.js` — rocket game screen (check sensors, calibrate, play, summary), sound and vibration
 - `js/chart.js`, `js/main.js` — charts and screen
 - `tests/` — unit tests for the pure logic
 

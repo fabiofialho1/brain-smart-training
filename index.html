@@ -106,6 +106,12 @@
     </section>
 
     <section class="card">
+      <h2>Jogo do foguete</h2>
+      <p class="hint" style="margin:0 0 10px">O foguete sobe enquanto você (ou a criança) fica calmo. O app confere os sensores antes, usa todos se estiverem bons e sugere ignorar os ruins. É um jogo de relaxamento, não um tratamento.</p>
+      <button id="open-game" class="primary">Abrir o jogo</button>
+    </section>
+
+    <section class="card">
       <h2>Gravação</h2>
       <div class="row">
         <button id="record" class="primary" disabled>Gravar</button>
@@ -120,6 +126,12 @@
       <p class="hint">Mantenha a tela ligada durante a gravação. Pacotes perdidos aparecem como células vazias.</p>
     </section>
   </main>
+
+  <div id="game" class="game" hidden>
+    <canvas id="game-canvas"></canvas>
+    <div class="game-top"><button data-game-close>Sair</button><span class="game-hud"></span></div>
+    <div class="game-panel"></div>
+  </div>
 
   <script type="module" src="js/main.js"></script>
 </body>
