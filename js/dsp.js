@@ -150,6 +150,15 @@ export function bandDensityDb(power, band) {
   return 10 * Math.log10(power / (band.hi - band.lo) + 1e-12);
 }
 
+// Mean band density across channels, in dB (µV²/Hz). `powersList`: one BANDS-ordered
+// array of band powers (µV²) per channel. This is the value plotted over time.
+export function groupBandDb(powersList, bands = BANDS) {
+  return bands.map((b, i) => {
+    const mean = powersList.reduce((sum, p) => sum + p[i], 0) / powersList.length;
+    return 10 * Math.log10(mean / (b.hi - b.lo) + 1e-12);
+  });
+}
+
 // --- Filters (RBJ cookbook biquads, transposed direct form II) ---
 
 export class Biquad {

@@ -3,10 +3,10 @@
 import { MuseClient } from './muse.js';
 import { EEG_CHANNELS, PPG_CHANNELS, EEG_RATE, PPG_RATE, MOTION_RATE } from './protocol.js';
 import {
-  RingBuffer, Biquad, FilterChain, BANDS, analyzeWindow, bandDensityDb, estimateHeartRate, HR_MIN_SNR,
+  RingBuffer, Biquad, FilterChain, BANDS, analyzeWindow, bandDensityDb, groupBandDb, estimateHeartRate, HR_MIN_SNR,
 } from './dsp.js';
 import { Recorder } from './recorder.js';
-import { drawLanes } from './chart.js';
+import { drawLanes, drawBandChart } from './chart.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -42,6 +42,9 @@ const accel = [0, 1, 2].map(() => new RingBuffer(MOTION_RATE * 10));
 const BAND_WINDOW = EEG_RATE * 2; // ~2 s
 const smoothedPowers = EEG_CHANNELS.map(() => null);
 const channelState = EEG_CHANNELS.map(() => 'flat');
+const bandHistory = []; // { t, db: number[] | null }, one point per second; null marks a gap
+const visibleBands = new Set(BANDS.map((_, i) => i));
+const HISTORY_MAX_MS = 10 * 60 * 1000;
 let lastEegAt = 0;
 let lastPpgAt = 0;
 let currentHr = null;
@@ -176,6 +179,14 @@ function frame() {
     seconds * EEG_RATE,
   );
 
+  drawBandChart($('band-chart'), {
+    history: bandHistory,
+    bands: BANDS.map((b) => BAND_INFO[b.id]),
+    visible: visibleBands,
+    now: performance.now(),
+    windowMs: Number($('band-window').value) * 1000,
+  });
+
   const ppg = removeMean(lastSamples(ppgView[1], 8, PPG_RATE));
   drawLanes(
     ppgCanvas,
@@ -215,6 +226,23 @@ function buildBandsUi() {
   $('band-table').querySelector('tbody').innerHTML = EEG_CHANNELS.map(
     (name, ch) => `<tr id="row-${ch}"><td>${name}</td>${BANDS.map((b) => `<td id="db-${ch}-${b.id}">--</td>`).join('')}</tr>`,
   ).join('');
+  const filter = $('band-filter');
+  const chips = [{ label: 'Todas', set: () => BANDS.map((_, i) => i) }, ...BANDS.map((b, i) => ({
+    label: BAND_INFO[b.id].label, set: () => [i], color: BAND_INFO[b.id].color,
+  }))];
+  chips.forEach((c, n) => {
+    const btn = document.createElement('button');
+    btn.className = 'chip';
+    btn.textContent = c.label;
+    if (c.color) btn.style.borderColor = c.color;
+    btn.setAttribute('aria-pressed', String(n === 0));
+    btn.addEventListener('click', () => {
+      visibleBands.clear();
+      c.set().forEach((i) => visibleBands.add(i));
+      [...filter.children].forEach((el, m) => el.setAttribute('aria-pressed', String(m === n)));
+    });
+    filter.appendChild(btn);
+  });
   $('quality').innerHTML = EEG_CHANNELS.map((name, ch) => `<span class="chip" id="q-${ch}">${name}</span>`).join('');
 }
 
@@ -258,6 +286,14 @@ function updateBands() {
       $(`db-${ch}-${b.id}`).textContent = bandDensityDb(smoothedPowers[ch][i], b).toFixed(1);
     });
   });
+
+  const now = performance.now();
+  const last = bandHistory[bandHistory.length - 1];
+  if (!last || now - last.t >= 1000) {
+    if (last?.db && now - last.t > 3000) bandHistory.push({ t: last.t + 1, db: null });
+    bandHistory.push({ t: now, db: groupBandDb(used.map((ch) => smoothedPowers[ch])) });
+    while (bandHistory[0].t < now - HISTORY_MAX_MS) bandHistory.shift();
+  }
 
   if (recording && updated.length === EEG_CHANNELS.length) {
     recorder.addBands(performance.now(), smoothedPowers, currentHr);

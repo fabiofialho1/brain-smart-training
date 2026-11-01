@@ -73,12 +73,17 @@ select { padding: 5px 8px; }
 .chart.eeg { height: 280px; }
 .chart.ppg { height: 110px; margin-top: 8px; }
 .chart.motion { height: 150px; }
+.chart.bandtime { height: 240px; margin-top: 10px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .chip { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 .chip.good { border-color: var(--good); color: var(--good); }
 .chip.noisy { border-color: var(--warn); color: var(--warn); }
 .chip.flat { border-color: var(--bad); color: var(--bad); }
+
+.chips.filter { margin: 0; }
+button.chip { background: transparent; cursor: pointer; padding: 4px 12px; font-size: 13px; color: var(--text); }
+button.chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
 
 .bands { display: grid; gap: 8px; }
 .band { display: grid; grid-template-columns: 74px 1fr 48px; align-items: center; gap: 8px; font-size: 13px; }

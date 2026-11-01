@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RingBuffer, fft, powerSpectrum, bandPowers, bandDensityDb, BANDS, Biquad, FilterChain, analyzeWindow,
+  RingBuffer, fft, powerSpectrum, bandPowers, bandDensityDb, groupBandDb, BANDS, Biquad, FilterChain, analyzeWindow,
   estimateHeartRate, HR_MIN_SNR,
 } from '../js/dsp.js';
 
@@ -123,4 +123,12 @@ test('estimateHeartRate reports a low SNR for pure noise and null for short inpu
   const r = estimateHeartRate(noise(640, 9), 64);
   assert.ok(r.snr < HR_MIN_SNR, `snr=${r.snr}`);
   assert.equal(estimateHeartRate(noise(100, 9), 64), null);
+});
+
+test('groupBandDb averages channels and reports dB of density', () => {
+  const delta = BANDS[0]; // 1-4 Hz, 3 Hz wide
+  const db = groupBandDb([[30, 0, 0, 0, 0], [60, 0, 0, 0, 0]], BANDS);
+  assert.ok(Math.abs(db[0] - 10 * Math.log10(45 / 3)) < 1e-9);
+  assert.equal(delta.hi - delta.lo, 3);
+  assert.ok(db[1] < -100); // empty band does not produce NaN
 });

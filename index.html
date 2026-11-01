@@ -67,6 +67,22 @@
     </section>
 
     <section class="card">
+      <h2>Bandas ao longo do tempo</h2>
+      <div class="row tools">
+        <label>Janela
+          <select id="band-window">
+            <option value="60">1 min</option>
+            <option value="300" selected>5 min</option>
+            <option value="600">10 min</option>
+          </select>
+        </label>
+      </div>
+      <div id="band-filter" class="chips filter"></div>
+      <canvas id="band-chart" class="chart bandtime"></canvas>
+      <p class="hint">Média dos canais com bom contato, em dB de µV²/Hz (mesma escala do app oficial).</p>
+    </section>
+
+    <section class="card">
       <h2>Frequência cardíaca (PPG)</h2>
       <div class="hr"><span id="hr" class="hr-value">--</span><span class="hr-unit">bpm</span></div>
       <p id="hr-hint" class="hint">Aguardando dados do PPG…</p>
