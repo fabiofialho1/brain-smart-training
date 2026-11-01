@@ -127,11 +127,17 @@ export function drawBandChart(canvas, { history, bands, visible, now, windowMs }
   }
   ctx.textBaseline = 'top';
   const tickEvery = windowMs <= 60000 ? 15 : windowMs <= 300000 ? 60 : 120;
+  ctx.fillStyle = LABEL;
+  let nextLeft = Infinity; // left edge of the label already drawn to the right
   for (let s = 0; s <= windowMs / 1000 + 1e-9; s += tickEvery) {
+    const text = ago(s);
+    const width = ctx.measureText(text).width;
     const px = x(now - s * 1000);
-    ctx.textAlign = s === 0 ? 'right' : s === windowMs / 1000 ? 'left' : 'center';
-    ctx.fillStyle = LABEL;
-    ctx.fillText(ago(s), px, h - bottom + 5 * dpr);
+    const start = s === 0 ? px - width : s === windowMs / 1000 ? px : px - width / 2;
+    if (start + width + 6 * dpr > nextLeft) continue;
+    ctx.textAlign = 'left';
+    ctx.fillText(text, start, h - bottom + 5 * dpr);
+    nextLeft = start;
   }
 
   if (empty) {
