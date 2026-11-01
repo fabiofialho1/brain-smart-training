@@ -3,7 +3,7 @@
 import { MuseClient } from './muse.js';
 import { EEG_CHANNELS, PPG_CHANNELS, EEG_RATE, PPG_RATE, MOTION_RATE } from './protocol.js';
 import {
-  RingBuffer, Biquad, FilterChain, BANDS, analyzeWindow, bandDensityDb, BandAccumulator, estimateHeartRate, HR_MIN_SNR,
+  RingBuffer, Biquad, FilterChain, BANDS, analyzeWindow, bandDensityDb, BandAccumulator, QualityTracker, estimateHeartRate, HR_MIN_SNR,
 } from './dsp.js';
 import { Recorder } from './recorder.js';
 import { drawLanes, drawBandChart } from './chart.js';
@@ -31,7 +31,14 @@ const EEG_COLORS = ['#4fb3d9', '#4cc38a', '#e3b341', '#d98cf0'];
 const EEG_SECONDS = 10;
 const eegRaw = EEG_CHANNELS.map(() => new RingBuffer(EEG_RATE * EEG_SECONDS));
 const eegView = EEG_CHANNELS.map(() => new RingBuffer(EEG_RATE * EEG_SECONDS)); // band-passed, for display
-const eegFilters = EEG_CHANNELS.map(() => new FilterChain([Biquad.highpass(EEG_RATE, 1), Biquad.lowpass(EEG_RATE, 40)]));
+// Display filter: 1 Hz high-pass, 4th-order 40 Hz low-pass (two Butterworth sections) and a
+// 50 Hz notch for mains pickup. The analysis (bands, quality) works on the raw signal.
+const eegFilters = EEG_CHANNELS.map(() => new FilterChain([
+  Biquad.highpass(EEG_RATE, 1),
+  Biquad.lowpass(EEG_RATE, 40, 0.5412),
+  Biquad.lowpass(EEG_RATE, 40, 1.3066),
+  Biquad.notch(EEG_RATE, 50),
+]));
 
 const ppgRaw = PPG_CHANNELS.map(() => new RingBuffer(PPG_RATE * 10));
 const ppgView = PPG_CHANNELS.map(() => new RingBuffer(PPG_RATE * 10));
@@ -42,6 +49,7 @@ const accel = [0, 1, 2].map(() => new RingBuffer(MOTION_RATE * 10));
 const BAND_WINDOW = EEG_RATE * 2; // ~2 s
 const smoothedPowers = EEG_CHANNELS.map(() => null);
 const channelState = EEG_CHANNELS.map(() => 'flat');
+const qualityTracker = new QualityTracker(EEG_CHANNELS.length);
 const bandHistory = []; // { t, db: number[] | null }, one point per second; null marks a gap
 const visibleBands = new Set(BANDS.map((_, i) => i));
 const HISTORY_MAX_MS = 10 * 60 * 1000;
@@ -246,6 +254,7 @@ function buildBandsUi() {
     });
     filter.appendChild(btn);
   });
+  $('diag-body').innerHTML = EEG_CHANNELS.map((name, ch) => `<tr id="diag-${ch}"><td>${name}</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>`).join('');
   $('quality').innerHTML = EEG_CHANNELS.map((name, ch) => `<span class="chip" id="q-${ch}">${name}</span>`).join('');
 }
 
@@ -257,13 +266,17 @@ function updateBands() {
     const { powers, quality } = analyzeWindow(eegRaw[ch].toArray(BAND_WINDOW), EEG_RATE);
     const prev = smoothedPowers[ch];
     smoothedPowers[ch] = prev ? powers.map((v, i) => prev[i] * 0.6 + v * 0.4) : powers;
-    channelState[ch] = quality.state;
+    // The chart looks at every window (an artifact edge must not leak in); the indicator and the
+    // bars use the debounced state so they do not flicker around a threshold.
     chartAcc.add(ch, powers, quality.state);
+    const stable = qualityTracker.update(ch, quality.state);
+    channelState[ch] = stable;
+    $(`diag-${ch}`).innerHTML = `<td>${EEG_CHANNELS[ch]}</td><td>${quality.rms.toFixed(0)}</td><td>${quality.hfDb.toFixed(1)}</td><td>${quality.mainsDb.toFixed(1)}</td><td>${QUALITY_LABEL[quality.state]} / ${QUALITY_LABEL[stable]}</td>`;
     updated.push(ch);
 
     const chip = $(`q-${ch}`);
-    chip.className = `chip ${quality.state}`;
-    chip.textContent = `${EEG_CHANNELS[ch]} ${QUALITY_LABEL[quality.state]}`;
+    chip.className = `chip ${stable}`;
+    chip.textContent = `${EEG_CHANNELS[ch]} ${QUALITY_LABEL[stable]}`;
   });
   if (updated.length === 0) return;
 

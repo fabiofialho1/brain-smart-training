@@ -54,6 +54,14 @@
       </div>
       <canvas id="eeg-chart" class="chart eeg"></canvas>
       <div id="quality" class="chips"></div>
+      <details class="diag">
+        <summary>Diagnóstico por canal</summary>
+        <table>
+          <thead><tr><th>Canal</th><th>rms µV</th><th>55–100 Hz dB</th><th>50 Hz dB</th><th>bruto / estável</th></tr></thead>
+          <tbody id="diag-body"></tbody>
+        </table>
+        <p class="hint">rms de 1–45 Hz (ruído acima de 100 µV é ruidoso); 55–100 Hz acima de 5 dB é ruído de banda larga; 50 Hz é só informativo (rede elétrica). O estado estável exige 2 janelas ruins ou 4 boas seguidas.</p>
+      </details>
     </section>
 
     <section class="card">

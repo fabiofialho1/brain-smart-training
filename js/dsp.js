@@ -234,6 +234,13 @@ export class Biquad {
     return new Biquad((1 - c) / 2, 1 - c, (1 - c) / 2, 1 + alpha, -2 * c, 1 - alpha);
   }
 
+  static notch(fs, fc, q = 30) {
+    const w = (2 * Math.PI * fc) / fs;
+    const c = Math.cos(w);
+    const alpha = Math.sin(w) / (2 * q);
+    return new Biquad(1, -2 * c, 1, 1 + alpha, -2 * c, 1 - alpha);
+  }
+
   static highpass(fs, fc, q = Math.SQRT1_2) {
     const w = (2 * Math.PI * fc) / fs;
     const c = Math.cos(w);
@@ -266,20 +273,53 @@ export class FilterChain {
 // --- EEG signal quality ---
 
 export const QUALITY_FLAT_UV = 0.3; // rms below this: no signal / no contact
-export const QUALITY_NOISY_UV = 100; // rms above this: movement or poor contact
+export const QUALITY_NOISY_UV = 100; // rms (1-45 Hz) above this: movement or poor contact
+export const QUALITY_EEG_BAND = [1, 45]; // Hz; mains (50 Hz) and above is not EEG
 export const QUALITY_HF_BAND = [55, 100]; // Hz, beyond mains (50 Hz) and real EEG
 export const QUALITY_HF_DB = 5; // dB (µV²/Hz) in that band: muscle / contact noise
+export const MAINS_BAND = [48, 52]; // Hz; reported for diagnosis only
+
+const density = (spec, [lo, hi]) => 10 * Math.log10(bandPower(spec, lo, hi) / (hi - lo) + 1e-12);
 
 // One pass over a raw ~2 s window: band powers (µV², BANDS order) plus signal quality.
 // Real EEG has almost nothing at 55-100 Hz (good channels measured -12..+1.5 dB), while a
 // badly seated electrode is broadband noise (+9..+27 dB) even when its rms looks plausible.
+// The rms only counts 1-45 Hz: 50 Hz mains pickup is not brain signal and must not decide.
 export function analyzeWindow(samples, fs) {
   const spec = powerSpectrum(samples, fs);
   const powers = BANDS.map((b) => bandPower(spec, b.lo, b.hi));
-  const rms = Math.sqrt(bandPower(spec, 0, fs / 2 + spec.df));
-  const hfDb = 10 * Math.log10(bandPower(spec, ...QUALITY_HF_BAND) / (QUALITY_HF_BAND[1] - QUALITY_HF_BAND[0]) + 1e-12);
+  const rms = Math.sqrt(bandPower(spec, ...QUALITY_EEG_BAND));
+  const hfDb = density(spec, QUALITY_HF_BAND);
+  const mainsDb = density(spec, MAINS_BAND);
   const state = rms < QUALITY_FLAT_UV ? 'flat' : rms > QUALITY_NOISY_UV || hfDb > QUALITY_HF_DB ? 'noisy' : 'good';
-  return { powers, quality: { rms, hfDb, state } };
+  return { powers, quality: { rms, hfDb, mainsDb, state } };
+}
+
+// Debounces the per-window state so the indicator does not flicker around a threshold:
+// leaving a state takes `toBad` consecutive different windows (`toGood` to return to good).
+// The first reading is accepted as is.
+export class QualityTracker {
+  constructor(channels, { toBad = 2, toGood = 4 } = {}) {
+    this.toBad = toBad;
+    this.toGood = toGood;
+    this.state = Array.from({ length: channels }, () => null);
+    this.streak = Array.from({ length: channels }, () => 0);
+  }
+
+  update(channel, raw) {
+    const current = this.state[channel];
+    if (current === null || raw === current) {
+      this.state[channel] = raw;
+      this.streak[channel] = 0;
+      return raw;
+    }
+    this.streak[channel]++;
+    if (this.streak[channel] >= (raw === 'good' ? this.toGood : this.toBad)) {
+      this.state[channel] = raw;
+      this.streak[channel] = 0;
+    }
+    return this.state[channel];
+  }
 }
 
 // --- Heart rate from PPG ---

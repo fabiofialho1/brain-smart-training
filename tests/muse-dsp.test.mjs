@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RingBuffer, fft, powerSpectrum, bandPowers, bandDensityDb, groupBandDb, BandAccumulator, BANDS, Biquad, FilterChain, analyzeWindow,
+  RingBuffer, fft, powerSpectrum, bandPowers, bandDensityDb, groupBandDb, BandAccumulator, QualityTracker, BANDS, Biquad, FilterChain, analyzeWindow,
   estimateHeartRate, HR_MIN_SNR,
 } from '../js/dsp.js';
 
@@ -153,4 +153,30 @@ test('BandAccumulator returns null when no channel had a good window (artifact)'
   // and it is clean for the next interval
   acc.add(0, [30, 0, 0, 0, 0], 'good');
   assert.ok(acc.flush() !== null);
+});
+
+test('notch removes 50 Hz mains but keeps EEG; 4th-order low-pass attenuates beyond 40 Hz', () => {
+  const rmsTail = (x) => Math.sqrt(x.slice(1024).reduce((a, v) => a + v * v, 0) / (x.length - 1024));
+  const run = (filters, f) => sine(2048, 256, f, 100).map((v) => filters.reduce((y, b) => b.process(y), v));
+  const notch = () => [Biquad.notch(256, 50)];
+  assert.ok(rmsTail(run(notch(), 50)) < 100 * Math.SQRT1_2 * 0.03, '50 Hz down >30 dB');
+  assert.ok(rmsTail(run(notch(), 10)) > 100 * Math.SQRT1_2 * 0.97, '10 Hz untouched');
+  const lp4 = () => [Biquad.lowpass(256, 40, 0.5412), Biquad.lowpass(256, 40, 1.3066)];
+  assert.ok(rmsTail(run(lp4(), 55)) < 100 * Math.SQRT1_2 * 0.3, '4th order beats 2nd order past 40 Hz');
+  assert.ok(rmsTail(run(lp4(), 20)) > 100 * Math.SQRT1_2 * 0.95);
+});
+
+test('quality rms ignores 50 Hz mains pickup', () => {
+  const eeg = sine(512, 256, 10, 20);
+  const withMains = eeg.map((v, i) => v + 300 * Math.sin(2 * Math.PI * 50 * (i / 256)));
+  const r = analyzeWindow(withMains, 256);
+  assert.equal(r.quality.state, 'good');
+  assert.ok(r.quality.rms < 30, `rms=${r.quality.rms}`);
+  assert.ok(r.quality.mainsDb > analyzeWindow(eeg, 256).quality.mainsDb + 30);
+});
+
+test('QualityTracker debounces flicker', () => {
+  const t = new QualityTracker(1);
+  const seq = ['good', 'noisy', 'good', 'noisy', 'noisy', 'good', 'good', 'good', 'good'];
+  assert.equal(seq.map((s) => t.update(0, s)).join(' '), 'good good good good noisy noisy noisy noisy good');
 });
