@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RingBuffer, fft, powerSpectrum, bandPowers, bandDensityDb, groupBandDb, BandAccumulator, QualityTracker, BANDS, Biquad, FilterChain, analyzeWindow,
+  RingBuffer, fft, powerSpectrum, bandPowers, bandDensityDb, groupBandDb, BandAccumulator, QualityTracker, heartSignalState, BANDS, Biquad, FilterChain, analyzeWindow,
   estimateHeartRate, HR_MIN_SNR,
 } from '../js/dsp.js';
 
@@ -179,4 +179,24 @@ test('QualityTracker debounces flicker', () => {
   const t = new QualityTracker(1);
   const seq = ['good', 'noisy', 'good', 'noisy', 'noisy', 'good', 'good', 'good', 'good'];
   assert.equal(seq.map((s) => t.update(0, s)).join(' '), 'good good good good noisy noisy noisy noisy good');
+});
+
+test('heartSignalState: off, waiting, measuring, good and weak', () => {
+  const base = { ppgOn: true, msSinceData: 200, samples: 640, fs: 64, snr: 20 };
+  assert.equal(heartSignalState({ ...base, ppgOn: false }), 'off');
+  assert.equal(heartSignalState({ ...base, msSinceData: null }), 'waiting');
+  assert.equal(heartSignalState({ ...base, msSinceData: 5000 }), 'waiting');
+  assert.equal(heartSignalState({ ...base, samples: 64 * 3, snr: null }), 'measuring');
+  assert.equal(heartSignalState(base), 'good');
+  assert.equal(heartSignalState({ ...base, snr: 2 }), 'weak');
+  assert.equal(heartSignalState({ ...base, snr: null }), 'weak');
+});
+
+test('RingBuffer.clear empties the buffer', () => {
+  const r = new RingBuffer(4);
+  r.pushMany([1, 2, 3]);
+  r.clear();
+  assert.equal(r.count, 0);
+  r.push(9);
+  assert.deepEqual([...r.toArray()], [9]);
 });

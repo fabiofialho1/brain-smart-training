@@ -12,6 +12,7 @@ App web de uso pessoal que conecta ao headband **Muse 2** por Web Bluetooth
 - Gráfico das bandas ao longo do tempo (dB de µV²/Hz, um ponto a cada 4 s, janela de 1, 5 ou 10 min), com botões para ver todas ou uma só, como o app oficial
 - Potência das bandas delta (1–4 Hz), theta (4–8), alfa (7,5–13), beta (13–30) e gama (30–44) por FFT numa janela de 2 s
 - Frequência cardíaca estimada pelo espectro do PPG (janela de 10 s; só mostra o valor com sinal bom)
+- Indicador "Coração" ao lado dos canais de EEG: aguardando, medindo, bom ou sinal fraco (só avisa depois de 3 leituras fracas seguidas)
 - Gravação de sessão e exportação em CSV
 
 O protocolo foi implementado do zero com base no muse-js (sem dependências, sem build). A partida da transmissão segue o que o app oficial faz, observado numa captura Bluetooth do próprio aparelho (firmware 1.0.22): `v7`, `s`, `h`, preset `p51` (ou `p21` sem PPG), `s`, assinaturas e `dc001`, com `d` como plano B se o EEG não chegar em 3 s. Como o app oficial, não assina o giroscópio nem os PPG ambiente e vermelho.

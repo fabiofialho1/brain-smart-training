@@ -19,6 +19,11 @@ export class RingBuffer {
     for (const v of values) this.push(v);
   }
 
+  clear() {
+    this.head = 0;
+    this.count = 0;
+  }
+
   // Last `n` samples, oldest first.
   toArray(n = this.count) {
     n = Math.min(n, this.count);
@@ -363,4 +368,16 @@ export function estimateHeartRate(samples, fs, nfft = 4096) {
   }
   const snr = count > 0 && noise > 0 ? psd[peak] / (noise / count) : 0;
   return { bpm, snr };
+}
+
+export const HR_MIN_SECONDS = 6; // PPG needed before a heart rate can be estimated
+
+// State of the heart-rate sensor, for the indicator next to the EEG channels:
+// off (PPG disabled), waiting (no data), measuring (too little data), good or weak.
+// `msSinceData`: null if no PPG packet was ever received; `snr`: from estimateHeartRate.
+export function heartSignalState({ ppgOn, msSinceData, samples, fs, snr }) {
+  if (!ppgOn) return 'off';
+  if (msSinceData === null || msSinceData > 3000) return 'waiting';
+  if (samples < fs * HR_MIN_SECONDS) return 'measuring';
+  return snr !== null && snr >= HR_MIN_SNR ? 'good' : 'weak';
 }

@@ -3,7 +3,7 @@
 import { MuseClient } from './muse.js';
 import { EEG_CHANNELS, PPG_CHANNELS, EEG_RATE, PPG_RATE, MOTION_RATE } from './protocol.js';
 import {
-  RingBuffer, Biquad, FilterChain, BANDS, analyzeWindow, bandDensityDb, BandAccumulator, QualityTracker, estimateHeartRate, HR_MIN_SNR,
+  RingBuffer, Biquad, FilterChain, BANDS, analyzeWindow, bandDensityDb, BandAccumulator, QualityTracker, estimateHeartRate, heartSignalState, HR_MIN_SECONDS,
 } from './dsp.js';
 import { Recorder } from './recorder.js';
 import { drawLanes, drawBandChart } from './chart.js';
@@ -100,6 +100,12 @@ function renderState(state) {
 let connectedAt = 0;
 muse.addEventListener('state', (e) => {
   if (e.detail === 'connected') connectedAt = performance.now();
+  if (e.detail === 'connecting') {
+    for (const r of [...ppgRaw, ...ppgView]) r.clear();
+    hrHistory = [];
+    hrMisses = 0;
+    lastPpgAt = 0;
+  }
   renderState(e.detail);
 });
 
@@ -287,7 +293,8 @@ function buildBandsUi() {
     filter.appendChild(btn);
   });
   $('diag-body').innerHTML = EEG_CHANNELS.map((name, ch) => `<tr id="diag-${ch}"><td>${name}</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>`).join('');
-  $('quality').innerHTML = EEG_CHANNELS.map((name, ch) => `<span class="chip" id="q-${ch}">${name}</span>`).join('');
+  $('quality').innerHTML = EEG_CHANNELS.map((name, ch) => `<span class="chip" id="q-${ch}">${name}</span>`).join('')
+    + '<span class="chip" id="q-hr">Coração aguardando</span>';
 }
 
 function updateBands() {
@@ -356,38 +363,60 @@ function updateBands() {
 }
 
 // --- Heart rate (once per second) ---
+const HEART_CHIP = {
+  off: ['Coração desligado', ''],
+  waiting: ['Coração aguardando', ''],
+  measuring: ['Coração medindo…', ''],
+  good: ['Coração bom', 'good'],
+  weak: ['Coração sinal fraco', 'noisy'],
+};
+let heartState = 'waiting';
+
+function setHeartChip(state) {
+  const [label, cls] = HEART_CHIP[state];
+  const chip = $('q-hr');
+  chip.className = `chip ${cls}`;
+  chip.textContent = label;
+}
+
 function updateHeartRate() {
   const hint = $('hr-hint');
-  if (muse.state === 'connected' && !muse.hasPpg) {
+  const ppgOn = !(muse.state === 'connected' && !muse.hasPpg);
+  const msSince = lastPpgAt ? performance.now() - lastPpgAt : null;
+  const n = Math.min(ppgRaw[1].count, PPG_RATE * 10);
+  let best = null;
+  if (ppgOn && msSince !== null && msSince <= 3000 && n >= PPG_RATE * HR_MIN_SECONDS) {
+    best = estimateHeartRate(ppgRaw[1].toArray(n), PPG_RATE);
+  }
+  let state = heartSignalState({ ppgOn, msSinceData: msSince, samples: n, fs: PPG_RATE, snr: best ? best.snr : null });
+  // A weak reading only counts after 3 in a row, so the indicator does not flicker.
+  if (state === 'weak') {
+    hrMisses++;
+    if (hrMisses < 3) state = heartState === 'good' ? 'good' : 'measuring';
+  } else if (state === 'good') {
+    hrMisses = 0;
+  }
+  heartState = state;
+  setHeartChip(state);
+
+  if (state === 'off') {
     $('hr').textContent = '--';
     hint.textContent = 'PPG desligado. Marque "Medir frequência cardíaca" e reconecte para medir.';
     currentHr = null;
-    return;
-  }
-  if (performance.now() - lastPpgAt > 3000) {
+  } else if (state === 'waiting') {
     $('hr').textContent = '--';
     hint.textContent = lastPpgAt ? 'Sem dados de PPG.' : 'Aguardando dados do PPG…';
     currentHr = null;
-    return;
-  }
-  const ready = ppgRaw[1].count >= PPG_RATE * 6;
-  if (!ready) {
+  } else if (state === 'measuring') {
     hint.textContent = 'Medindo… (precisa de ~6 s de sinal)';
-    return;
-  }
-  const n = Math.min(ppgRaw[1].count, PPG_RATE * 10);
-  const candidates = [estimateHeartRate(ppgRaw[1].toArray(n), PPG_RATE)].filter(Boolean);
-  const best = candidates.sort((a, b) => b.snr - a.snr)[0];
-
-  if (best && best.snr >= HR_MIN_SNR) {
-    hrMisses = 0;
+  } else if (state === 'good') {
     hrHistory.push(best.bpm);
     if (hrHistory.length > 5) hrHistory.shift();
     const sorted = [...hrHistory].sort((a, b) => a - b);
     currentHr = sorted[Math.floor(sorted.length / 2)];
     $('hr').textContent = Math.round(currentHr);
     hint.textContent = 'Estimativa pelo espectro do PPG (janela de 10 s). Fique parado.';
-  } else if (++hrMisses >= 3) {
+  } else {
     hrHistory = [];
     currentHr = null;
     $('hr').textContent = '--';
