@@ -1,5 +1,5 @@
 // Lets the app open without internet. Network first (to pick up updates), cache as fallback.
-const CACHE = 'muse-eeg-v1';
+const CACHE = 'muse-eeg-v2';
 const FILES = [
   './', 'index.html', 'style.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',
   'js/main.js', 'js/muse.js', 'js/protocol.js', 'js/dsp.js', 'js/recorder.js', 'js/chart.js',

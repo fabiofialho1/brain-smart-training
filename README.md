@@ -7,8 +7,9 @@ App web de uso pessoal que conecta ao headband **Muse 2** por Web Bluetooth
 
 - Conecta/desconecta e reconecta sozinho se o sinal cair
 - EEG dos 4 canais (TP9, AF7, AF8, TP10) a 256 Hz, PPG (64 Hz), acelerômetro e giroscópio (52 Hz) e bateria
-- Gráfico em tempo real do sinal bruto (escala e janela ajustáveis; filtro 1–40 Hz opcional) e indicador de qualidade por canal
-- Potência das bandas delta (1–4 Hz), theta (4–8), alfa (8–13), beta (13–30) e gama (30–44) por FFT numa janela de 2 s
+- Gráfico em tempo real do sinal bruto (escala e janela ajustáveis; filtro 1–40 Hz opcional) e indicador de qualidade por canal (ruído de banda larga em 55–100 Hz, que denuncia eletrodo mal encostado)
+- As barras de bandas só usam canais com bom contato; a tabela mostra dB de µV²/Hz (mesma escala do app oficial da Muse) e deixa os canais excluídos esmaecidos
+- Potência das bandas delta (1–4 Hz), theta (4–8), alfa (7,5–13), beta (13–30) e gama (30–44) por FFT numa janela de 2 s
 - Frequência cardíaca estimada pelo espectro do PPG (janela de 10 s; só mostra o valor com sinal bom)
 - Gravação de sessão e exportação em CSV
 

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RingBuffer, fft, powerSpectrum, bandPowers, BANDS, Biquad, FilterChain, signalQuality,
+  RingBuffer, fft, powerSpectrum, bandPowers, bandDensityDb, BANDS, Biquad, FilterChain, analyzeWindow,
   estimateHeartRate, HR_MIN_SNR,
 } from '../js/dsp.js';
 
@@ -78,10 +78,34 @@ test('Biquad low-pass removes high frequencies, high-pass removes DC', () => {
   assert.ok(dc.every((v) => Math.abs(v) < 1e-6), 'primed filter has no start-up transient');
 });
 
-test('signalQuality classifies flat, good and noisy signals', () => {
-  assert.equal(signalQuality(new Float64Array(256)).state, 'flat');
-  assert.equal(signalQuality(sine(256, 256, 10, 20)).state, 'good');
-  assert.equal(signalQuality(sine(256, 256, 10, 400)).state, 'noisy');
+test('alpha band starts at 7.5 Hz and density is power per Hz', () => {
+  const alpha = BANDS.find((b) => b.id === 'alpha');
+  assert.equal(alpha.lo, 7.5);
+  const p = bandPowers(sine(512, 256, 7.5, 10), 256);
+  assert.equal(p.indexOf(Math.max(...p)), 2);
+  // 52 µV² spread over 5.5 Hz of alpha -> 10*log10(52/5.5) dB
+  assert.ok(Math.abs(bandDensityDb(52, alpha) - 10 * Math.log10(52 / 5.5)) < 1e-9);
+});
+
+test('analyzeWindow returns band powers and classifies flat, good and noisy channels', () => {
+  const eeg = (amp) => sine(512, 256, 10, amp).map((v, i) => v + 5 * noise(512, 2)[i]);
+  assert.equal(analyzeWindow(new Float64Array(512), 256).quality.state, 'flat');
+
+  const good = analyzeWindow(eeg(20), 256);
+  assert.equal(good.quality.state, 'good');
+  assert.equal(good.powers.length, BANDS.length);
+  assert.ok(good.quality.hfDb < 5);
+
+  // Large movement artifact: rms above 100 µV.
+  assert.equal(analyzeWindow(eeg(400), 256).quality.state, 'noisy');
+
+  // Broadband noise (badly seated electrode): rms is plausible (~50 µV) but the 55-100 Hz
+  // density is far above real EEG.
+  const broadband = Float64Array.from(noise(512, 7), (v) => v * 80);
+  const bb = analyzeWindow(broadband, 256);
+  assert.ok(bb.quality.rms < 100, `rms=${bb.quality.rms}`);
+  assert.ok(bb.quality.hfDb > 5, `hf=${bb.quality.hfDb}`);
+  assert.equal(bb.quality.state, 'noisy');
 });
 
 test('estimateHeartRate finds the pulse of a synthetic PPG', () => {

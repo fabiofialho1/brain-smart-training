@@ -134,7 +134,7 @@ export function bandPower({ psd, df }, lo, hi) {
 export const BANDS = [
   { id: 'delta', lo: 1, hi: 4 },
   { id: 'theta', lo: 4, hi: 8 },
-  { id: 'alpha', lo: 8, hi: 13 },
+  { id: 'alpha', lo: 7.5, hi: 13 },
   { id: 'beta', lo: 13, hi: 30 },
   { id: 'gamma', lo: 30, hi: 44 },
 ];
@@ -143,6 +143,11 @@ export const BANDS = [
 export function bandPowers(samples, fs) {
   const spec = powerSpectrum(samples, fs);
   return BANDS.map((b) => bandPower(spec, b.lo, b.hi));
+}
+
+// Band power as dB of power spectral density (µV²/Hz), the scale used by the Muse app.
+export function bandDensityDb(power, band) {
+  return 10 * Math.log10(power / (band.hi - band.lo) + 1e-12);
 }
 
 // --- Filters (RBJ cookbook biquads, transposed direct form II) ---
@@ -214,22 +219,21 @@ export class FilterChain {
 
 // --- EEG signal quality ---
 
-export const QUALITY_FLAT_UV = 0.3;
-export const QUALITY_NOISY_UV = 100;
+export const QUALITY_FLAT_UV = 0.3; // rms below this: no signal / no contact
+export const QUALITY_NOISY_UV = 100; // rms above this: movement or poor contact
+export const QUALITY_HF_BAND = [55, 100]; // Hz, beyond mains (50 Hz) and real EEG
+export const QUALITY_HF_DB = 5; // dB (µV²/Hz) in that band: muscle / contact noise
 
-// `samples`: band-passed EEG (µV), ~1 s. Standard deviation decides:
-// flat = no signal / no contact, noisy = movement or poor contact.
-export function signalQuality(samples) {
-  const n = samples.length;
-  if (n === 0) return { rms: 0, state: 'flat' };
-  let mean = 0;
-  for (let i = 0; i < n; i++) mean += samples[i];
-  mean /= n;
-  let ss = 0;
-  for (let i = 0; i < n; i++) ss += (samples[i] - mean) ** 2;
-  const rms = Math.sqrt(ss / n);
-  const state = rms < QUALITY_FLAT_UV ? 'flat' : rms > QUALITY_NOISY_UV ? 'noisy' : 'good';
-  return { rms, state };
+// One pass over a raw ~2 s window: band powers (µV², BANDS order) plus signal quality.
+// Real EEG has almost nothing at 55-100 Hz (good channels measured -12..+1.5 dB), while a
+// badly seated electrode is broadband noise (+9..+27 dB) even when its rms looks plausible.
+export function analyzeWindow(samples, fs) {
+  const spec = powerSpectrum(samples, fs);
+  const powers = BANDS.map((b) => bandPower(spec, b.lo, b.hi));
+  const rms = Math.sqrt(bandPower(spec, 0, fs / 2 + spec.df));
+  const hfDb = 10 * Math.log10(bandPower(spec, ...QUALITY_HF_BAND) / (QUALITY_HF_BAND[1] - QUALITY_HF_BAND[0]) + 1e-12);
+  const state = rms < QUALITY_FLAT_UV ? 'flat' : rms > QUALITY_NOISY_UV || hfDb > QUALITY_HF_DB ? 'noisy' : 'good';
+  return { powers, quality: { rms, hfDb, state } };
 }
 
 // --- Heart rate from PPG ---

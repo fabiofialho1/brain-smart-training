@@ -3,7 +3,7 @@
 import { MuseClient } from './muse.js';
 import { EEG_CHANNELS, PPG_CHANNELS, EEG_RATE, PPG_RATE, MOTION_RATE } from './protocol.js';
 import {
-  RingBuffer, Biquad, FilterChain, BANDS, bandPowers, estimateHeartRate, signalQuality, HR_MIN_SNR,
+  RingBuffer, Biquad, FilterChain, BANDS, analyzeWindow, bandDensityDb, estimateHeartRate, HR_MIN_SNR,
 } from './dsp.js';
 import { Recorder } from './recorder.js';
 import { drawLanes } from './chart.js';
@@ -41,6 +41,7 @@ const accel = [0, 1, 2].map(() => new RingBuffer(MOTION_RATE * 10));
 
 const BAND_WINDOW = EEG_RATE * 2; // ~2 s
 const smoothedPowers = EEG_CHANNELS.map(() => null);
+const channelState = EEG_CHANNELS.map(() => 'flat');
 let lastEegAt = 0;
 let lastPpgAt = 0;
 let currentHr = null;
@@ -210,9 +211,9 @@ function buildBandsUi() {
     wrap.appendChild(row);
   }
   $('band-table').querySelector('thead tr').innerHTML =
-    `<th>dB (µV²)</th>${BANDS.map((b) => `<th>${BAND_INFO[b.id].label}</th>`).join('')}`;
+    `<th>dB (µV²/Hz)</th>${BANDS.map((b) => `<th>${BAND_INFO[b.id].label}</th>`).join('')}`;
   $('band-table').querySelector('tbody').innerHTML = EEG_CHANNELS.map(
-    (name, ch) => `<tr><td>${name}</td>${BANDS.map((b) => `<td id="db-${ch}-${b.id}">--</td>`).join('')}</tr>`,
+    (name, ch) => `<tr id="row-${ch}"><td>${name}</td>${BANDS.map((b) => `<td id="db-${ch}-${b.id}">--</td>`).join('')}</tr>`,
   ).join('');
   $('quality').innerHTML = EEG_CHANNELS.map((name, ch) => `<span class="chip" id="q-${ch}">${name}</span>`).join('');
 }
@@ -222,31 +223,39 @@ function updateBands() {
   const updated = [];
   EEG_CHANNELS.forEach((_, ch) => {
     if (eegRaw[ch].count < BAND_WINDOW) return;
-    const p = bandPowers(eegRaw[ch].toArray(BAND_WINDOW), EEG_RATE);
+    const { powers, quality } = analyzeWindow(eegRaw[ch].toArray(BAND_WINDOW), EEG_RATE);
     const prev = smoothedPowers[ch];
-    smoothedPowers[ch] = prev ? p.map((v, i) => prev[i] * 0.6 + v * 0.4) : p;
+    smoothedPowers[ch] = prev ? powers.map((v, i) => prev[i] * 0.6 + v * 0.4) : powers;
+    channelState[ch] = quality.state;
     updated.push(ch);
 
-    const q = signalQuality(eegView[ch].toArray(EEG_RATE));
     const chip = $(`q-${ch}`);
-    chip.className = `chip ${q.state}`;
-    chip.textContent = `${EEG_CHANNELS[ch]} ${QUALITY_LABEL[q.state]}`;
+    chip.className = `chip ${quality.state}`;
+    chip.textContent = `${EEG_CHANNELS[ch]} ${QUALITY_LABEL[quality.state]}`;
   });
   if (updated.length === 0) return;
 
-  // Relative power averaged over the channels that have data.
+  // Summary bars only use channels with good contact; a single noisy electrode would otherwise
+  // dominate the linear average. If none is good, fall back to all so the screen is not empty.
+  const good = updated.filter((ch) => channelState[ch] === 'good');
+  const used = good.length > 0 ? good : updated;
+  $('bands-note').textContent = good.length > 0
+    ? `Barras calculadas com: ${good.map((ch) => EEG_CHANNELS[ch]).join(', ')}${good.length < updated.length ? ' (canais ruins excluídos)' : ''}.`
+    : 'Nenhum canal com bom contato; ajuste o headband. Barras usando todos os canais.';
+
   const rel = BANDS.map(() => 0);
-  for (const ch of updated) {
+  for (const ch of used) {
     const total = smoothedPowers[ch].reduce((a, b) => a + b, 0) || 1;
-    smoothedPowers[ch].forEach((v, i) => { rel[i] += v / total / updated.length; });
+    smoothedPowers[ch].forEach((v, i) => { rel[i] += v / total / used.length; });
   }
   BANDS.forEach((b, i) => {
     $(`fill-${b.id}`).style.width = `${(rel[i] * 100).toFixed(1)}%`;
     $(`pct-${b.id}`).textContent = `${(rel[i] * 100).toFixed(0)}%`;
   });
   updated.forEach((ch) => {
+    $(`row-${ch}`).classList.toggle('excluded', !used.includes(ch));
     BANDS.forEach((b, i) => {
-      $(`db-${ch}-${b.id}`).textContent = (10 * Math.log10(smoothedPowers[ch][i] + 1e-12)).toFixed(1);
+      $(`db-${ch}-${b.id}`).textContent = bandDensityDb(smoothedPowers[ch][i], b).toFixed(1);
     });
   });
 
