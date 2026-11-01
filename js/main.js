@@ -97,7 +97,11 @@ function renderState(state) {
   }
 }
 
-muse.addEventListener('state', (e) => renderState(e.detail));
+let connectedAt = 0;
+muse.addEventListener('state', (e) => {
+  if (e.detail === 'connected') connectedAt = performance.now();
+  renderState(e.detail);
+});
 
 muse.addEventListener('reconnected', () => {
   recorder?.restart(performance.now());
@@ -307,6 +311,7 @@ function updateBands() {
     chip.textContent = `${EEG_CHANNELS[ch]} ${QUALITY_LABEL[stable]}`;
   });
   if (updated.length === 0) return;
+  $('settle-note').hidden = !(performance.now() - connectedAt < 90000 && channelState.some((st) => st === 'noisy'));
 
   // Summary bars only use channels with good contact; a single noisy electrode would otherwise
   // dominate the linear average. If none is good, fall back to all so the screen is not empty.

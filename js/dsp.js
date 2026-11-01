@@ -276,14 +276,16 @@ export const QUALITY_FLAT_UV = 0.3; // rms below this: no signal / no contact
 export const QUALITY_NOISY_UV = 100; // rms (1-45 Hz) above this: movement or poor contact
 export const QUALITY_EEG_BAND = [1, 45]; // Hz; mains (50 Hz) and above is not EEG
 export const QUALITY_HF_BAND = [55, 100]; // Hz, beyond mains (50 Hz) and real EEG
-export const QUALITY_HF_DB = 5; // dB (µV²/Hz) in that band: muscle / contact noise
+export const QUALITY_HF_DB = 14; // dB (µV²/Hz) in that band: muscle / contact noise
 export const MAINS_BAND = [48, 52]; // Hz; reported for diagnosis only
 
 const density = (spec, [lo, hi]) => 10 * Math.log10(bandPower(spec, lo, hi) / (hi - lo) + 1e-12);
 
 // One pass over a raw ~2 s window: band powers (µV², BANDS order) plus signal quality.
-// Real EEG has almost nothing at 55-100 Hz (good channels measured -12..+1.5 dB), while a
-// badly seated electrode is broadband noise (+9..+27 dB) even when its rms looks plausible.
+// Real EEG has little at 55-100 Hz, while a badly seated electrode is broadband noise. Calibrated
+// on the EEG the official Muse app received (Bluetooth capture, 800+ clean windows, rms < 30 µV):
+// TP9/AF8/TP10 stay below ~7 dB, but AF7 is naturally higher (median 9, p90 14 dB), so 14 dB keeps
+// false alarms near 2% while bad windows (rms > 100 µV, median 19 dB) are caught by this or the rms.
 // The rms only counts 1-45 Hz: 50 Hz mains pickup is not brain signal and must not decide.
 export function analyzeWindow(samples, fs) {
   const spec = powerSpectrum(samples, fs);

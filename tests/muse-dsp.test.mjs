@@ -94,17 +94,17 @@ test('analyzeWindow returns band powers and classifies flat, good and noisy chan
   const good = analyzeWindow(eeg(20), 256);
   assert.equal(good.quality.state, 'good');
   assert.equal(good.powers.length, BANDS.length);
-  assert.ok(good.quality.hfDb < 5);
+  assert.ok(good.quality.hfDb < 14);
 
   // Large movement artifact: rms above 100 µV.
   assert.equal(analyzeWindow(eeg(400), 256).quality.state, 'noisy');
 
   // Broadband noise (badly seated electrode): rms is plausible (~50 µV) but the 55-100 Hz
   // density is far above real EEG.
-  const broadband = Float64Array.from(noise(512, 7), (v) => v * 80);
+  const broadband = Float64Array.from(noise(512, 7), (v) => v * 150);
   const bb = analyzeWindow(broadband, 256);
   assert.ok(bb.quality.rms < 100, `rms=${bb.quality.rms}`);
-  assert.ok(bb.quality.hfDb > 5, `hf=${bb.quality.hfDb}`);
+  assert.ok(bb.quality.hfDb > 14, `hf=${bb.quality.hfDb}`);
   assert.equal(bb.quality.state, 'noisy');
 });
 
