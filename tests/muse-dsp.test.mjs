@@ -133,21 +133,24 @@ test('groupBandDb averages channels and reports dB of density', () => {
   assert.ok(db[1] < -100); // empty band does not produce NaN
 });
 
-test('BandAccumulator averages good windows only and clears after flush', () => {
-  const acc = new BandAccumulator(2);
+test('BandAccumulator averages clean channels and drops any channel with a bad window', () => {
+  const acc = new BandAccumulator(3);
   acc.add(0, [10, 0, 0, 0, 0], 'good');
   acc.add(0, [30, 0, 0, 0, 0], 'good');
-  acc.add(0, [1000, 0, 0, 0, 0], 'noisy'); // ignored while the channel also had good windows
-  acc.add(1, [500, 0, 0, 0, 0], 'noisy'); // channel never good: left out
+  acc.add(1, [20, 0, 0, 0, 0], 'good');
+  acc.add(1, [1000, 0, 0, 0, 0], 'noisy'); // edge of an artifact: whole channel dropped
+  acc.add(2, [500, 0, 0, 0, 0], 'noisy'); // never good
   const db = acc.flush();
-  assert.ok(Math.abs(db[0] - 10 * Math.log10(20 / 3)) < 1e-9);
+  assert.ok(Math.abs(db[0] - 10 * Math.log10(20 / 3)) < 1e-9); // only channel 0: mean(10, 30)
   assert.equal(acc.flush(), null);
 });
 
-test('BandAccumulator falls back to all windows when no channel was good', () => {
+test('BandAccumulator returns null when no channel had a good window (artifact)', () => {
   const acc = new BandAccumulator(2);
-  acc.add(0, [30, 0, 0, 0, 0], 'noisy');
+  acc.add(0, [1e5, 1e5, 1e5, 1e5, 1e5], 'noisy');
   acc.add(1, [60, 0, 0, 0, 0], 'flat');
-  const db = acc.flush();
-  assert.ok(Math.abs(db[0] - 10 * Math.log10(45 / 3)) < 1e-9);
+  assert.equal(acc.flush(), null);
+  // and it is clean for the next interval
+  acc.add(0, [30, 0, 0, 0, 0], 'good');
+  assert.ok(acc.flush() !== null);
 });

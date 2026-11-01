@@ -297,7 +297,7 @@ function updateBands() {
     const db = chartAcc.flush();
     const last = bandHistory[bandHistory.length - 1];
     if (db) {
-      if (last?.db && now - last.t > 2.5 * CHART_INTERVAL_MS) bandHistory.push({ t: last.t + 1, db: null });
+      if (last?.db && now - last.t > 1.5 * CHART_INTERVAL_MS) bandHistory.push({ t: last.t + 1, db: null });
       bandHistory.push({ t: now, db });
       while (bandHistory[0].t < now - HISTORY_MAX_MS) bandHistory.shift();
     }

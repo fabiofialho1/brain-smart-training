@@ -161,7 +161,10 @@ export function groupBandDb(powersList, bands = BANDS) {
 
 // Averages the 2 s window estimates over a longer interval (Welch-style: the windows overlap),
 // which cuts the variance of a single periodogram. Only windows where the channel had good
-// contact count; if a channel never did, it is left out; if none did, all windows are used.
+// contact count, and a channel with ANY bad window in the interval is left out entirely: the
+// windows at the edge of an artifact still look fine on their own but are contaminated by it.
+// If no channel is clean (movement, jaw clench, headband being adjusted) there is nothing
+// trustworthy to plot, so flush() gives null.
 export class BandAccumulator {
   constructor(channels, bands = BANDS) {
     this.bands = bands;
@@ -171,22 +174,22 @@ export class BandAccumulator {
   reset(channels = this.good.length) {
     const empty = () => ({ sum: this.bands.map(() => 0), n: 0 });
     this.good = Array.from({ length: channels }, empty);
-    this.all = Array.from({ length: channels }, empty);
+    this.dirty = Array.from({ length: channels }, () => false);
   }
 
   add(channel, powers, state) {
-    const targets = state === 'good' ? [this.good[channel], this.all[channel]] : [this.all[channel]];
-    for (const t of targets) {
-      powers.forEach((p, i) => { t.sum[i] += p; });
-      t.n++;
+    if (state !== 'good') {
+      this.dirty[channel] = true;
+      return;
     }
+    const t = this.good[channel];
+    powers.forEach((p, i) => { t.sum[i] += p; });
+    t.n++;
   }
 
   // dB of density (µV²/Hz) per band, or null if nothing was added. Clears the accumulator.
   flush() {
-    const means = (list) => list.filter((t) => t.n > 0).map((t) => t.sum.map((v) => v / t.n));
-    let chosen = means(this.good);
-    if (chosen.length === 0) chosen = means(this.all);
+    const chosen = this.good.filter((t, ch) => t.n > 0 && !this.dirty[ch]).map((t) => t.sum.map((v) => v / t.n));
     const out = chosen.length > 0 ? groupBandDb(chosen, this.bands) : null;
     this.reset();
     return out;
