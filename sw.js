@@ -1,10 +1,10 @@
 // Lets the app open without internet. Network first (to pick up updates), cache as fallback.
 // Requests bypass the browser HTTP cache (GitHub Pages sends max-age=600), otherwise a fresh
 // deploy can take ~10 minutes to show up even though the service worker asks the network.
-const CACHE = 'muse-eeg-v13';
+const CACHE = 'muse-eeg-v15';
 const FILES = [
   './', 'index.html', 'style.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',
-  'js/main.js', 'js/muse.js', 'js/protocol.js', 'js/dsp.js', 'js/recorder.js', 'js/chart.js', 'js/neuro.js', 'js/game.js',
+  'js/main.js', 'js/muse.js', 'js/protocol.js', 'js/dsp.js', 'js/recorder.js', 'js/chart.js', 'js/neuro.js', 'js/game.js', 'js/scene.js',
 ];
 
 self.addEventListener('install', (e) => {

@@ -4,13 +4,14 @@
 import {
   suggestChannels, channelFeatures, Baseline, computeScore, RewardController, Rocket, EEG_POSTERIOR,
 } from './neuro.js';
+import { Scene } from './scene.js';
 
 const NAMES = ['TP9', 'AF7', 'AF8', 'TP10'];
 const STATE_LABEL = { good: 'bom', noisy: 'ruidoso', flat: 'sem sinal' };
 
 // ?calib=10&play=20 in the URL shortens the phases (for testing).
 const params = new URLSearchParams(typeof location === 'undefined' ? '' : location.search);
-const CALIBRATION_S = Number(params.get('calib')) || 60;
+const CALIBRATION_S = Number(params.get('calib')) || 30;
 const PLAY_S = Number(params.get('play')) || 300;
 const STALE_MS = 3000;
 
@@ -30,7 +31,7 @@ export class NeuroGame {
     this.frame = null;
     this.lastFrameAt = 0;
     this.shownKey = '';
-    this.stars = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.6 + 0.4 }));
+    this.scene = new Scene();
 
     root.querySelector('[data-game-close]').addEventListener('click', () => this.close());
     this.panel.addEventListener('click', (e) => {
@@ -158,7 +159,6 @@ export class NeuroGame {
     this.level = 0.4;
     this.paused = false;
     this.pauseReason = '';
-    this.celebrateUntil = 0;
     this.phase = 'play';
     this.phaseStart = performance.now();
     this.panel.innerHTML = '';
@@ -187,6 +187,9 @@ export class NeuroGame {
   showSummary() {
     this.phase = 'summary';
     this.setTone(0);
+    this.scene.finale(performance.now(), this.rocket.missions);
+    this.fanfare([523, 659, 784, 1047, 784, 1047, 1319], 0.12);
+    if (this.vibrate) navigator.vibrate?.([100, 60, 100, 60, 300]);
     const { total, calm, paused } = this.stats;
     const frames = total + paused || 1;
     this.panel.innerHTML = `
@@ -221,14 +224,26 @@ export class NeuroGame {
     } else {
       this.hud.textContent = '';
     }
+    this.scene.update(dt, now, this.sceneState());
     this.draw(now);
     this.raf = requestAnimationFrame((t) => this.loop(t));
   }
 
   onMission(now) {
-    this.celebrateUntil = now + 2500;
+    this.scene.missionDone(now, this.rocket.missions);
     if (this.vibrate) navigator.vibrate?.([80, 40, 80]);
-    this.beep();
+    this.fanfare([523, 659, 784, 1047], 0.11);
+  }
+
+  sceneState() {
+    return {
+      phase: this.phase,
+      level: this.level ?? 0,
+      paused: !!this.paused,
+      stale: !!this.stale,
+      altitude: this.rocket ? this.rocket.altitude : 0,
+      message: this.pauseReason,
+    };
   }
 
   draw(now) {
@@ -238,79 +253,7 @@ export class NeuroGame {
     const h = Math.round(c.clientHeight * dpr);
     if (!w || !h) return;
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
-    const ctx = c.getContext('2d');
-    const alt = this.rocket ? this.rocket.altitude : 0;
-    const level = this.phase === 'play' && !this.paused && !this.stale ? this.level : 0;
-
-    const sky = ctx.createLinearGradient(0, 0, 0, h);
-    sky.addColorStop(0, `rgb(${10 - 6 * alt | 0}, ${16 - 8 * alt | 0}, ${50 - 28 * alt | 0})`);
-    sky.addColorStop(1, `rgb(${70 - 50 * alt | 0}, ${60 - 40 * alt | 0}, ${110 - 70 * alt | 0})`);
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, h);
-
-    ctx.fillStyle = '#fff';
-    for (const s of this.stars) {
-      const y = ((s.y + alt * 0.5) % 1) * h;
-      ctx.globalAlpha = 0.35 + 0.65 * alt;
-      ctx.beginPath();
-      ctx.arc(s.x * w, y, s.r * dpr, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    const groundY = h * 0.85 + alt * h * 0.5;
-    ctx.fillStyle = '#25402f';
-    ctx.fillRect(0, groundY, w, h - groundY + 1);
-
-    const cx = w / 2 + (this.paused || this.stale ? Math.sin(now / 90) * 2 * dpr : 0);
-    const cy = h * 0.72 - alt * h * 0.38;
-    const u = Math.min(w, h) / 14; // rocket size unit
-    if (level > 0.05) { // flame
-      const len = u * (1.2 + 3.2 * level) * (0.85 + 0.15 * Math.sin(now / 60));
-      const fl = ctx.createLinearGradient(0, cy + u * 2.4, 0, cy + u * 2.4 + len);
-      fl.addColorStop(0, '#fff3b0');
-      fl.addColorStop(0.5, '#ff9f1c');
-      fl.addColorStop(1, 'rgba(255,60,0,0)');
-      ctx.fillStyle = fl;
-      ctx.beginPath();
-      ctx.moveTo(cx - u * 0.7, cy + u * 2.4);
-      ctx.lineTo(cx, cy + u * 2.4 + len);
-      ctx.lineTo(cx + u * 0.7, cy + u * 2.4);
-      ctx.fill();
-    }
-    ctx.fillStyle = '#d33'; // fins
-    ctx.beginPath();
-    ctx.moveTo(cx - u * 1.2, cy + u * 2.5);
-    ctx.lineTo(cx - u * 2.1, cy + u * 3.1);
-    ctx.lineTo(cx - u * 1.0, cy + u * 1.2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(cx + u * 1.2, cy + u * 2.5);
-    ctx.lineTo(cx + u * 2.1, cy + u * 3.1);
-    ctx.lineTo(cx + u * 1.0, cy + u * 1.2);
-    ctx.fill();
-    ctx.fillStyle = '#f2f4f8'; // body
-    ctx.beginPath();
-    ctx.ellipse(cx, cy + u * 1.1, u * 1.25, u * 2.3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#d33'; // nose
-    ctx.beginPath();
-    ctx.moveTo(cx - u * 0.95, cy - u * 0.4);
-    ctx.quadraticCurveTo(cx, cy - u * 2.6, cx + u * 0.95, cy - u * 0.4);
-    ctx.fill();
-    ctx.fillStyle = '#4fb3d9'; // window
-    ctx.beginPath();
-    ctx.arc(cx, cy + u * 0.7, u * 0.6, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#fff';
-    ctx.font = `${22 * dpr}px system-ui, sans-serif`;
-    if (this.phase === 'play' && now < this.celebrateUntil) {
-      ctx.fillText('★ Missão cumprida! ★', w / 2, h * 0.14);
-    } else if (this.phase === 'play' && (this.paused || this.stale)) {
-      ctx.fillText(this.stale ? 'Sem sinal do Muse…' : this.pauseReason, w / 2, h * 0.14);
-    }
+    this.scene.draw(c.getContext('2d'), w, h, dpr, now, this.sceneState());
   }
 
   // ---- sound ----
@@ -319,40 +262,59 @@ export class NeuroGame {
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       const ctx = new AC();
-      const osc = ctx.createOscillator();
+      const master = ctx.createGain();
+      master.connect(ctx.destination);
+      const osc = ctx.createOscillator(); // rising whistle
       const gain = ctx.createGain();
       gain.gain.value = 0;
-      osc.connect(gain).connect(ctx.destination);
+      osc.connect(gain).connect(master);
       osc.start();
-      this.audio = { ctx, osc, gain };
+      const rumble = ctx.createOscillator(); // low engine rumble
+      rumble.type = 'sawtooth';
+      rumble.frequency.value = 55;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 220;
+      const rgain = ctx.createGain();
+      rgain.gain.value = 0;
+      rumble.connect(lp).connect(rgain).connect(master);
+      rumble.start();
+      this.audio = { ctx, osc, gain, rumble, rgain, master };
     } catch { /* no audio available */ }
   }
 
   setTone(level) {
     if (!this.audio || !this.sound) return;
-    const { ctx, osc, gain } = this.audio;
-    osc.frequency.setTargetAtTime(180 + 260 * level, ctx.currentTime, 0.1);
-    gain.gain.setTargetAtTime(0.035 * level, ctx.currentTime, 0.1);
+    const { ctx, osc, gain, rumble, rgain } = this.audio;
+    osc.frequency.setTargetAtTime(180 + 300 * level, ctx.currentTime, 0.1);
+    gain.gain.setTargetAtTime(0.03 * level, ctx.currentTime, 0.1);
+    rumble.frequency.setTargetAtTime(50 + 35 * level, ctx.currentTime, 0.1);
+    rgain.gain.setTargetAtTime(0.05 * level, ctx.currentTime, 0.15);
   }
 
-  beep() {
+  // Rising arpeggio, used for each mission and (longer) at the end.
+  fanfare(notes, gap) {
     if (!this.audio || !this.sound) return;
-    const { ctx } = this.audio;
-    for (const [i, f] of [660, 880, 1100].entries()) {
+    const { ctx, master } = this.audio;
+    notes.forEach((f, i) => {
+      const t = ctx.currentTime + i * gap;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+      osc.type = 'triangle';
       osc.frequency.value = f;
-      gain.gain.setValueAtTime(0.06, ctx.currentTime + i * 0.12);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.12 + 0.2);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(ctx.currentTime + i * 0.12);
-      osc.stop(ctx.currentTime + i * 0.12 + 0.25);
-    }
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.09, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + (i === notes.length - 1 ? 0.9 : 0.28));
+      osc.connect(gain).connect(master);
+      osc.start(t);
+      osc.stop(t + 1);
+    });
   }
 
   stopAudio() {
     try {
       this.audio?.osc.stop();
+      this.audio?.rumble.stop();
       this.audio?.ctx.close();
     } catch { /* ignore */ }
     this.audio = null;

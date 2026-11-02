@@ -145,7 +145,7 @@ export class Rocket {
   }
 
   step(level, dt) {
-    const rate = level >= 0.4 ? 0.05 : 0.03;
+    const rate = level >= 0.4 ? 0.08 : 0.02;
     this.altitude = Math.max(0, this.altitude + (level - 0.4) * rate * dt);
     if (this.altitude >= 1) {
       this.altitude = 0;
