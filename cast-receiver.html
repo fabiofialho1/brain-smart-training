@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teste de Cast (TV)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1020; color: #fff; font-family: system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh; }
+    h1 { font-size: 5vh; margin: 0; }
+    #n { font-size: 14vh; font-variant-numeric: tabular-nums; }
+    #bar { width: 80vw; height: 4vh; background: #223; border-radius: 2vh; overflow: hidden; }
+    #fill { height: 100%; width: 0; background: #3fb6a8; }
+    #info { font-size: 3vh; opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <h1 id="title">Teste de Cast</h1>
+  <div id="n">--</div>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="info">Aguardando o celular…</div>
+  <script>
+    // Receiver (TV) side: echoes every ping so the phone can measure the round trip.
+    let count = 0;
+    let last = 0;
+    function setup(conn) {
+      document.getElementById('info').textContent = 'Conectado ao celular.';
+      conn.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type !== 'ping') return;
+        count++;
+        last = performance.now();
+        document.getElementById('n').textContent = msg.n;
+        document.getElementById('fill').style.width = `${(msg.n % 50) * 2}%`;
+        conn.send(JSON.stringify({ type: 'pong', t: msg.t }));
+      };
+      conn.onclose = () => { document.getElementById('info').textContent = 'Celular desconectado.'; };
+    }
+    const receiver = navigator.presentation && navigator.presentation.receiver;
+    if (receiver) {
+      receiver.connectionList.then((list) => {
+        list.connections.forEach(setup);
+        list.onconnectionavailable = (e) => setup(e.connection);
+      });
+      setInterval(() => {
+        if (count && performance.now() - last > 2000) document.getElementById('info').textContent = 'Sem mensagens há mais de 2 s…';
+      }, 1000);
+    } else {
+      document.getElementById('info').textContent = 'Esta página deve ser aberta pelo celular (Enviar para a TV).';
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teste de Cast</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <section class="card">
+      <h2>Teste de Cast (celular → TV)</h2>
+      <p class="hint" style="margin-top:0">Verifica se o Chrome do celular consegue abrir uma página na Google TV e mede o atraso das mensagens. Não usa o Muse.</p>
+      <p id="support" class="mono"></p>
+      <button id="cast" class="primary" disabled>Enviar para a TV</button>
+      <button id="stop" disabled>Parar</button>
+      <p id="status" class="mono">Aguardando…</p>
+      <p id="rtt" class="mono"></p>
+    </section>
+  </main>
+  <script type="module" src="js/cast-test.js"></script>
+</body>
+</html>
