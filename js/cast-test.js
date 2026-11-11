@@ -4,6 +4,25 @@
 const $ = (id) => document.getElementById(id);
 const PING_MS = 100;
 
+const diag = {
+  navegador: '', webview: '', contextoSeguro: String(window.isSecureContext), presentationApi: 'PresentationRequest' in window ? 'sim' : 'NÃO',
+  disponibilidade: 'não verificada', ultimoErro: '-',
+};
+
+function describeBrowser() {
+  const ua = navigator.userAgent;
+  const chrome = /Chrome\/([\d.]+)/.exec(ua)?.[1] ?? 'não é Chrome';
+  const android = /Android ([\d.]+)/.exec(ua)?.[1] ?? '?';
+  diag.navegador = `Chrome ${chrome} · Android ${android}`;
+  // WebView / in-app browsers hide the Cast picker; "wv" is in the user agent of Android WebView.
+  diag.webview = /; wv\)/.test(ua) || /(FBAN|FBAV|Instagram|Line\/|MicroMessenger|Claude)/i.test(ua)
+    ? 'SIM (provavelmente um navegador dentro de outro app: abra no Chrome)' : 'não';
+}
+
+function showDiag() {
+  $('diag').textContent = Object.entries(diag).map(([k, v]) => `${k}: ${v}`).join('\n');
+}
+
 let connection = null;
 let timer = null;
 let seq = 0;
@@ -53,6 +72,11 @@ function stop(message) {
 }
 
 async function main() {
+  describeBrowser();
+  showDiag();
+  $('copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText($('diag').textContent); $('copy').textContent = 'Copiado!'; } catch { $('copy').textContent = 'Não foi possível copiar'; }
+  });
   if (!('PresentationRequest' in window)) {
     $('support').textContent = 'Este navegador não tem a Presentation API. Use o Chrome no Android.';
     return;
@@ -63,6 +87,8 @@ async function main() {
   try {
     const availability = await request.getAvailability();
     const update = () => {
+      diag.disponibilidade = availability.value ? 'há tela(s) Cast' : 'nenhuma tela encontrada';
+      showDiag();
       $('support').textContent = availability.value
         ? 'Presentation API disponível: há uma tela (Cast) na rede.'
         : 'Presentation API disponível, mas nenhuma tela (Cast) foi encontrada. A TV e o celular precisam estar na mesma rede Wi-Fi.';
@@ -71,6 +97,8 @@ async function main() {
     availability.onchange = update;
     update();
   } catch (e) {
+    diag.disponibilidade = `indisponível (${e.name}: ${e.message})`;
+    showDiag();
     $('support').textContent = `A busca de telas não está disponível (${e.name}); tente mesmo assim.`;
     $('cast').disabled = false;
   }
@@ -80,6 +108,8 @@ async function main() {
       $('status').textContent = 'Escolha a TV na lista…';
       attach(await request.start());
     } catch (e) {
+      diag.ultimoErro = `${e.name}: ${e.message}`;
+      showDiag();
       $('status').textContent = e.name === 'NotAllowedError' ? 'Seleção cancelada.' : `Não foi possível iniciar: ${e.name} ${e.message}`;
     }
   });
